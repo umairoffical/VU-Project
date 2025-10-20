@@ -1,0 +1,9 @@
+{
+  "name": "vuproject-ca-server",
+  "version": "1.0.0",
+  "description": "VuProject Real CA Server",
+  "main": "ca-server.js",
+  "scripts": {
+    "start": "node ca-server.js"
+  }
+}

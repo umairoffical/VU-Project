@@ -1,0 +1,96 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'vuproject-monitor'
+    environment: 'development'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "alerts/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Laravel API
+  - job_name: 'laravel'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['localhost:8000']
+        labels:
+          service: 'laravel-api'
+          environment: 'development'
+
+  # React Frontend
+  - job_name: 'react'
+    static_configs:
+      - targets: ['localhost:3000']
+        labels:
+          service: 'react-frontend'
+          environment: 'development'
+
+  # MySQL Database
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['localhost:3306']
+        labels:
+          service: 'mysql'
+          environment: 'development'
+
+  # Redis Cache
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['localhost:6379']
+        labels:
+          service: 'redis'
+          environment: 'development'
+
+  # Step-CA
+  - job_name: 'step-ca'
+    metrics_path: '/health'
+    static_configs:
+      - targets: ['localhost:8443']
+        labels:
+          service: 'step-ca'
+          environment: 'development'
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  # Nginx
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['localhost:80']
+        labels:
+          service: 'nginx'
+          environment: 'development'
+
+  # Certificate exporter (for monitoring certificate expiry)
+  - job_name: 'certificates'
+    scrape_interval: 1h
+    metrics_path: '/api/certificates/metrics'
+    static_configs:
+      - targets: ['localhost:8000']
+        labels:
+          service: 'certificate-monitor'
+          environment: 'development'
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /prometheus
+    retention:
+      time: 30d
+      size: 10GB

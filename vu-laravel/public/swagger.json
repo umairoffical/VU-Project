@@ -1,0 +1,399 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "VuProject Certificate Management API",
+    "description": "Comprehensive API for managing SSL/TLS certificates, including ACME protocol support",
+    "version": "1.0.0",
+    "contact": {
+      "name": "VuProject Team",
+      "email": "admin@vuproject.com"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000/api",
+      "description": "Local development server"
+    },
+    {
+      "url": "https://api.vuproject.com",
+      "description": "Production server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "User authentication endpoints"
+    },
+    {
+      "name": "Certificates",
+      "description": "Certificate management operations"
+    },
+    {
+      "name": "CSR",
+      "description": "Certificate Signing Request operations"
+    },
+    {
+      "name": "Notifications",
+      "description": "Notification management"
+    },
+    {
+      "name": "ACME",
+      "description": "ACME Protocol (RFC 8555) endpoints"
+    }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "password"],
+                "properties": {
+                  "name": {"type": "string", "example": "John Doe"},
+                  "email": {"type": "string", "format": "email", "example": "john@example.com"},
+                  "password": {"type": "string", "format": "password", "minLength": 8}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "422": {"description": "Validation error"}
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Login user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": {"type": "string", "format": "email"},
+                  "password": {"type": "string", "format": "password"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "401": {"description": "Invalid credentials"}
+        }
+      }
+    },
+    "/certificates": {
+      "get": {
+        "tags": ["Certificates"],
+        "summary": "List all certificates",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {"type": "string", "enum": ["issued", "pending", "revoked", "expired"]}
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {"type": "integer", "default": 15}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of certificates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                      "type": "array",
+                      "items": {"$ref": "#/components/schemas/Certificate"}
+                    },
+                    "pagination": {"$ref": "#/components/schemas/Pagination"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/certificates/generate": {
+      "post": {
+        "tags": ["Certificates"],
+        "summary": "Generate a new certificate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["commonName"],
+                "properties": {
+                  "commonName": {"type": "string", "example": "example.com"},
+                  "subjectAltNames": {"type": "array", "items": {"type": "string"}},
+                  "validityDays": {"type": "integer", "default": 365},
+                  "keyType": {"type": "string", "enum": ["RSA", "ECDSA", "ED25519"], "default": "RSA"},
+                  "keySize": {"type": "integer", "enum": [2048, 3072, 4096], "default": 2048}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Certificate generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {"type": "boolean"},
+                    "message": {"type": "string"},
+                    "data": {"$ref": "#/components/schemas/Certificate"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/certificates/renew": {
+      "post": {
+        "tags": ["Certificates"],
+        "summary": "Renew a certificate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["certificateId"],
+                "properties": {
+                  "certificateId": {"type": "string"},
+                  "validityDays": {"type": "integer", "default": 365}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Certificate renewed successfully"
+          }
+        }
+      }
+    },
+    "/certificates/revoke": {
+      "post": {
+        "tags": ["Certificates"],
+        "summary": "Revoke a certificate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["certificateId", "reason"],
+                "properties": {
+                  "certificateId": {"type": "string"},
+                  "reason": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Certificate revoked successfully"
+          }
+        }
+      }
+    },
+    "/csr/generate": {
+      "post": {
+        "tags": ["CSR"],
+        "summary": "Generate a Certificate Signing Request",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["commonName"],
+                "properties": {
+                  "commonName": {"type": "string"},
+                  "organization": {"type": "string"},
+                  "organizationalUnit": {"type": "string"},
+                  "country": {"type": "string", "minLength": 2, "maxLength": 2},
+                  "state": {"type": "string"},
+                  "city": {"type": "string"},
+                  "email": {"type": "string", "format": "email"},
+                  "subjectAltNames": {"type": "array", "items": {"type": "string"}},
+                  "keySize": {"type": "integer", "default": 2048},
+                  "validityDays": {"type": "integer", "default": 365}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "CSR generated successfully"
+          }
+        }
+      }
+    },
+    "/csr/list": {
+      "get": {
+        "tags": ["CSR"],
+        "summary": "List all CSR requests",
+        "responses": {
+          "200": {
+            "description": "List of CSR requests"
+          }
+        }
+      }
+    },
+    "/acme/directory": {
+      "get": {
+        "tags": ["ACME"],
+        "summary": "Get ACME directory",
+        "description": "Returns the ACME directory object containing URLs for all ACME operations",
+        "responses": {
+          "200": {
+            "description": "ACME directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "newNonce": {"type": "string", "format": "uri"},
+                    "newAccount": {"type": "string", "format": "uri"},
+                    "newOrder": {"type": "string", "format": "uri"},
+                    "revokeCert": {"type": "string", "format": "uri"},
+                    "keyChange": {"type": "string", "format": "uri"},
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "termsOfService": {"type": "string", "format": "uri"},
+                        "website": {"type": "string", "format": "uri"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "List all notifications",
+        "responses": {
+          "200": {
+            "description": "List of notifications"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Certificate": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "certificate_id": {"type": "string"},
+          "common_name": {"type": "string"},
+          "subject_alt_names": {"type": "array", "items": {"type": "string"}},
+          "status": {"type": "string", "enum": ["issued", "pending", "revoked", "expired", "renewed"]},
+          "type": {"type": "string", "enum": ["ca_signed", "self_signed"]},
+          "serial_number": {"type": "string"},
+          "fingerprint": {"type": "string"},
+          "issuer": {"type": "string"},
+          "issued_at": {"type": "string", "format": "date-time"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "validity_days": {"type": "integer"},
+          "key_type": {"type": "string", "enum": ["RSA", "ECDSA", "ED25519"]},
+          "key_size": {"type": "integer"},
+          "signature_algorithm": {"type": "string"}
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "success": {"type": "boolean"},
+          "token": {"type": "string"},
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "integer"},
+              "name": {"type": "string"},
+              "email": {"type": "string"},
+              "role": {"type": "string"}
+            }
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "current_page": {"type": "integer"},
+          "last_page": {"type": "integer"},
+          "per_page": {"type": "integer"},
+          "total": {"type": "integer"},
+          "from": {"type": "integer"},
+          "to": {"type": "integer"}
+        }
+      }
+    }
+  }
+}
+

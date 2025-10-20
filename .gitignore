@@ -1,0 +1,61 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Laravel
+/vu-laravel/vendor/
+/vu-laravel/storage/*.key
+/vu-laravel/storage/logs/*.log
+/vu-laravel/.env
+/vu-laravel/.env.backup
+/vu-laravel/.phpunit.result.cache
+/vu-laravel/bootstrap/cache/*
+/vu-laravel/storage/framework/cache/*
+/vu-laravel/storage/framework/sessions/*
+/vu-laravel/storage/framework/views/*
+
+# React build
+/vu-react/build/
+/vu-react/.env.local
+/vu-react/.env.development.local
+/vu-react/.env.test.local
+/vu-react/.env.production.local
+
+# Log files
+*.log
+*.pid
+laravel-server.log
+react.log
+ca-server.log
+cron.log
+
+# PID files
+*.pid
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# SSL certificates (generated)
+/real-ca-server/server.key
+/real-ca-server/server.crt
+
+# Database
+/vu-laravel/database/database.sqlite
+
+# Temporary files
+*.tmp
+*.temp
+
+# Package lock files (optional - uncomment if you want to ignore)
+# package-lock.json
+# composer.lock
