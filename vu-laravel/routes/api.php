@@ -122,7 +122,10 @@ Route::post('/certificates/generate', function (Request $request) {
         $commonName = $request->input('commonName');
         $subjectAltNames = $request->input('subjectAltNames', []);
         $validityDays = $request->input('validityDays', 365);
-        
+
+        $useRealCA = false;
+        $caData = null;
+
         // Try Real CA Server first
         try {
             $caClient = new \GuzzleHttp\Client(['verify' => false, 'timeout' => 5]);
@@ -134,28 +137,17 @@ Route::post('/certificates/generate', function (Request $request) {
                 ]
             ]);
             $caData = json_decode($caResponse->getBody(), true);
-            
+
             if ($caData && isset($caData['certificate'])) {
-                // Real CA is online - return directly without saving to database
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Certificate generated via Real CA Server',
-                    'certificate_id' => $caData['id'] ?? 'Generated',
-                    'common_name' => $commonName,
-                    'source' => 'real-ca-server',
-                    'real_ca_used' => true,
-                    'data' => $caData
-                ]);
+                $useRealCA = true;
             }
         } catch (\Exception $caError) {
             \Log::info('Real CA not available, using database fallback', ['error' => $caError->getMessage()]);
         }
-        
-        // CA Server offline - generate dummy certificate and save to database
-        $useRealCA = false;
-        
+
+        // Always save to database so certs persist and appear in DB fallback
         $certificate = \App\Models\Certificate::create([
-            'certificate_id' => 'CERT-' . strtoupper(substr(md5($commonName . time()), 0, 8)),
+            'certificate_id' => $useRealCA ? ($caData['id'] ?? 'CERT-' . strtoupper(substr(md5($commonName . time()), 0, 8))) : 'CERT-' . strtoupper(substr(md5($commonName . time()), 0, 8)),
             'common_name' => $commonName,
             'subject_alt_names' => json_encode($subjectAltNames),
             'csr' => $useRealCA && isset($caData['csr']) ? (is_string($caData['csr']) ? $caData['csr'] : json_encode($caData['csr'])) : null,
@@ -172,7 +164,7 @@ Route::post('/certificates/generate', function (Request $request) {
             'signature_algorithm' => 'SHA256withRSA',
             'key_size' => 2048,
             'key_type' => 'RSA',
-            'user_id' => 1, // Admin user
+            'user_id' => 1,
             'approved_by' => 1,
             'notes' => $useRealCA ? 'Generated via Real CA Server' : 'Generated via web interface (Dummy)',
             'metadata' => json_encode([
@@ -181,15 +173,15 @@ Route::post('/certificates/generate', function (Request $request) {
                 'real_ca' => $useRealCA,
             ]),
         ]);
-        
+
         return response()->json([
             'success' => true,
-            'message' => 'Certificate generated and saved to database (CA Server offline)',
+            'message' => $useRealCA ? 'Certificate generated via Real CA Server and saved to database' : 'Certificate generated and saved to database (CA Server offline)',
             'certificate_id' => $certificate->certificate_id,
             'common_name' => $certificate->common_name,
-            'source' => 'database',
-            'real_ca_used' => false,
-            'data' => $certificate
+            'source' => $useRealCA ? 'real-ca-server' : 'database',
+            'real_ca_used' => $useRealCA,
+            'data' => $useRealCA ? $caData : $certificate
         ]);
     } catch (\Exception $e) {
         return response()->json([
@@ -246,23 +238,48 @@ Route::get('/csr/list', function () {
 Route::post('/csr/approve/{id}', function ($id) {
     try {
         $csrRequest = \App\Models\CertificateRequest::findOrFail($id);
-        
+
         if ($csrRequest->status !== 'pending') {
             return response()->json([
                 'success' => false,
                 'message' => 'CSR has already been processed'
             ], 400);
         }
-        
-        // Generate certificate from CSR
+
+        $useRealCA = false;
+        $caData = null;
+
+        // Try to push to Real CA Server so it appears in live view
+        try {
+            $sans = is_string($csrRequest->subject_alt_names) ? json_decode($csrRequest->subject_alt_names, true) : ($csrRequest->subject_alt_names ?? []);
+            $caClient = new \GuzzleHttp\Client(['verify' => false, 'timeout' => 5]);
+            $caResponse = $caClient->post('https://localhost:8443/certificates/generate', [
+                'json' => [
+                    'commonName' => $csrRequest->common_name,
+                    'subjectAltNames' => $sans,
+                    'validityDays' => $csrRequest->validity_days
+                ]
+            ]);
+            $caData = json_decode($caResponse->getBody(), true);
+            if ($caData && isset($caData['certificate'])) {
+                $useRealCA = true;
+            }
+        } catch (\Exception $caError) {
+            \Log::info('Real CA not available for CSR approval', ['error' => $caError->getMessage()]);
+        }
+
+        // Always save certificate to database
         $certificate = \App\Models\Certificate::create([
-            'certificate_id' => 'CERT-' . strtoupper(substr(md5($csrRequest->common_name . time()), 0, 8)),
+            'certificate_id' => $useRealCA ? ($caData['id'] ?? 'CERT-' . strtoupper(substr(md5($csrRequest->common_name . time()), 0, 8))) : 'CERT-' . strtoupper(substr(md5($csrRequest->common_name . time()), 0, 8)),
             'common_name' => $csrRequest->common_name,
             'subject_alt_names' => $csrRequest->subject_alt_names,
+            'csr' => $useRealCA && isset($caData['csr']) ? (is_string($caData['csr']) ? $caData['csr'] : json_encode($caData['csr'])) : null,
+            'certificate' => $useRealCA && isset($caData['certificate']) ? (is_string($caData['certificate']) ? $caData['certificate'] : json_encode($caData['certificate'])) : null,
+            'private_key' => $useRealCA && isset($caData['privateKey']) ? (is_string($caData['privateKey']) ? $caData['privateKey'] : json_encode($caData['privateKey'])) : null,
             'status' => 'issued',
             'type' => 'ca_signed',
-            'serial_number' => strtoupper(substr(md5(time() . $csrRequest->common_name), 0, 16)),
-            'fingerprint' => 'SHA256:' . strtoupper(substr(md5($csrRequest->common_name . microtime()), 0, 40)),
+            'serial_number' => $useRealCA && isset($caData['serialNumber']) ? $caData['serialNumber'] : strtoupper(substr(md5(time() . $csrRequest->common_name), 0, 16)),
+            'fingerprint' => $useRealCA && isset($caData['fingerprint']) ? $caData['fingerprint'] : 'SHA256:' . strtoupper(substr(md5($csrRequest->common_name . microtime()), 0, 40)),
             'issuer' => 'VuProject CA',
             'issued_at' => now(),
             'expires_at' => now()->addDays($csrRequest->validity_days),
@@ -271,21 +288,21 @@ Route::post('/csr/approve/{id}', function ($id) {
             'key_size' => $csrRequest->key_size,
             'key_type' => 'RSA',
             'user_id' => $csrRequest->user_id,
-            'approved_by' => 1, // Admin who approved
+            'approved_by' => 1,
             'notes' => 'Approved from CSR Request: ' . $csrRequest->request_id,
             'metadata' => $csrRequest->metadata,
         ]);
-        
+
         // Update CSR request status
         $csrRequest->update([
             'status' => 'approved',
             'approved_by' => 1,
             'approved_at' => now(),
         ]);
-        
+
         return response()->json([
             'success' => true,
-            'message' => 'CSR approved and certificate issued',
+            'message' => 'CSR approved and certificate issued' . ($useRealCA ? ' via Real CA Server' : ''),
             'data' => $certificate
         ]);
     } catch (\Exception $e) {
