@@ -28,26 +28,17 @@ services:
       - vuproject-network
     restart: unless-stopped
 
-  # Step-CA Server
+  # Real CA Server (Node.js)
   step-ca:
     build:
-      context: ./step-ca-docker
+      context: ./real-ca-server
       dockerfile: Dockerfile
     container_name: vuproject-step-ca
-    environment:
-      - STEP_CA_PASSWORD=${STEP_CA_PASSWORD:-password123}
-      - STEP_CA_NAME=${STEP_CA_NAME:-VuProject CA}
-      - STEP_CA_DNS=${STEP_CA_DNS:-localhost}
-    volumes:
-      - step_ca_data:/home/step
-      - ./docker/step-ca/config:/etc/step-ca
     ports:
       - "8443:8443"
     networks:
       - vuproject-network
     restart: unless-stopped
-    depends_on:
-      - mysql
 
   # Laravel API Backend
   laravel-api:
